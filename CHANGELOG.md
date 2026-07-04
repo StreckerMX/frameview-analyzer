@@ -4,6 +4,13 @@ Todos los cambios notables de este proyecto se documentan aquí.
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.0.1] - 2026-07-04
+
+### Corregido
+
+- Crash al abrir la app: matplotlib no aceptaba colores tipo `gray70` de CustomTkinter
+- Conflicto pack/grid en la tarjeta del gráfico que impedía iniciar la interfaz
+
 ## [1.0.0] - 2026-07-04
 
 ### Añadido
