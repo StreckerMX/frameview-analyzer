@@ -19,6 +19,14 @@ APP_COLORS = {
     "series_b": "#3b8ed0",
 }
 
+# Colores hex válidos para matplotlib (no acepta nombres tipo gray70 de Tk).
+MPL_COLORS = {
+    "tick": "#b3b3b3",
+    "label": "#b3b3b3",
+    "legend": "#d9d9d9",
+    "title": "#ffffff",
+}
+
 
 def build_page_header(
     parent: ctk.CTkBaseClass,

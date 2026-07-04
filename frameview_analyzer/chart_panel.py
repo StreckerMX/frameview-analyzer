@@ -5,13 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import customtkinter as ctk
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 from frameview_analyzer.analytics import ChartPoint, get_stats_from_series
 from frameview_analyzer.metrics import MetricDef, metric_stat_fields, metric_unit
-from frameview_analyzer.ui_helpers import APP_COLORS, format_stat
+from frameview_analyzer.ui_helpers import APP_COLORS, MPL_COLORS, format_stat
 
 
 @dataclass
@@ -40,7 +39,7 @@ class ChartPanel(ctk.CTkFrame):
 
     def _style_axis(self) -> None:
         self._axis.set_facecolor(APP_COLORS["chart_bg"])
-        self._axis.tick_params(colors="gray70", labelsize=9)
+        self._axis.tick_params(colors=MPL_COLORS["tick"], labelsize=9)
         for spine in self._axis.spines.values():
             spine.set_color("#444444")
         self._axis.grid(True, color="#2a2a2a", linestyle="--", linewidth=0.6, alpha=0.8)
@@ -75,11 +74,16 @@ class ChartPanel(ctk.CTkFrame):
             ys = [p.y for p in series.points]
             self._axis.plot(xs, ys, label=series.label, color=series.color, linewidth=1.6, alpha=0.92)
 
-        self._axis.set_xlabel(x_label, color="gray70", fontsize=10)
-        self._axis.set_ylabel(y_label, color="gray70", fontsize=10)
-        self._axis.set_title(metric.label, color="white", fontsize=12, pad=10)
+        self._axis.set_xlabel(x_label, color=MPL_COLORS["label"], fontsize=10)
+        self._axis.set_ylabel(y_label, color=MPL_COLORS["label"], fontsize=10)
+        self._axis.set_title(metric.label, color=MPL_COLORS["title"], fontsize=12, pad=10)
         if len(series_list) > 1:
-            legend = self._axis.legend(facecolor="#222222", edgecolor="#444444", labelcolor="gray85", fontsize=9)
+            legend = self._axis.legend(
+                facecolor="#222222",
+                edgecolor="#444444",
+                labelcolor=MPL_COLORS["legend"],
+                fontsize=9,
+            )
             legend.get_frame().set_alpha(0.95)
         self._figure.tight_layout()
         self._canvas.draw_idle()

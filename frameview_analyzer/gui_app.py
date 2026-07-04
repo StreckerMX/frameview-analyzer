@@ -185,10 +185,8 @@ class FrameViewAnalyzerApp(ctk.CTk):
 
         chart_card = build_card(main, "Gráfico temporal")
         chart_card.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
-        chart_card.grid_rowconfigure(0, weight=1)
-        chart_card.grid_columnconfigure(0, weight=1)
         self._chart = ChartPanel(chart_card)
-        self._chart.grid(row=0, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        self._chart.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
         stats_card = build_card(main, "Estadísticas del tramo activo")
         stats_card.grid(row=1, column=0, sticky="nsew")
