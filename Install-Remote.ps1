@@ -3,7 +3,7 @@
 .SYNOPSIS
     Instala o actualiza FrameView Analyzer desde GitHub y abre la interfaz gráfica.
 .EXAMPLE
-    irm https://raw.githubusercontent.com/StreckerMX/frameview-analyzer/main/Install-Remote.ps1 | iex
+    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; irm https://raw.githubusercontent.com/StreckerMX/frameview-analyzer/main/Install-Remote.ps1 | iex
 #>
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +14,7 @@ $InstallDir = Join-Path $env:LOCALAPPDATA "FrameViewAnalyzer"
 $ZipUrl = "https://github.com/$RepoOwner/$RepoName/archive/refs/heads/main.zip"
 $RequirementsFile = "FrameViewAnalyzer.Requirements.txt"
 $EntryPoint = "Start-FrameViewAnalyzer.py"
+$ShortcutName = "FrameView Analyzer"
 
 function Write-Step([string]$Text) { Write-Host "`n$Text" -ForegroundColor Cyan }
 function Write-Ok([string]$Text) { Write-Host "  $Text" -ForegroundColor Green }
@@ -43,31 +44,86 @@ function Update-FromZip([string]$TargetDir) {
     $sourceDir = Get-ChildItem $extractDir -Directory | Select-Object -First 1
     if (-not $sourceDir) { throw "No se pudo extraer el repositorio." }
 
-    if (Test-Path $TargetDir) {
-        Remove-Item $TargetDir -Recurse -Force
+    if (-not (Test-Path $TargetDir)) {
+        New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
     }
-    New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
+
+    Get-ChildItem -LiteralPath $TargetDir -Force | Where-Object {
+        $_.Name -notin @("venv")
+    } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
     Copy-Item -Path (Join-Path $sourceDir.FullName "*") -Destination $TargetDir -Recurse -Force
     Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Step "FrameView Analyzer - Instalacion remota"
-$python = Get-PythonCmd
-if (-not $python) {
-    Write-Host "Python 3.10+ no encontrado. Instala Python desde https://www.python.org/downloads/" -ForegroundColor Red
+function Update-FromGit([string]$TargetDir) {
+    if (-not (Test-Path (Join-Path $TargetDir ".git"))) {
+        throw "No es un repositorio git."
+    }
+    git -C $TargetDir pull --ff-only
+}
+
+function New-DesktopShortcut([string]$ProjectRoot) {
+    $desktop = [Environment]::GetFolderPath("Desktop")
+    $shortcutPath = Join-Path $desktop "$ShortcutName.lnk"
+    $launcher = Join-Path $ProjectRoot "Start-FrameViewAnalyzer.ps1"
+    try {
+        $wsh = New-Object -ComObject WScript.Shell
+        $shortcut = $wsh.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = "powershell.exe"
+        $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`""
+        $shortcut.WorkingDirectory = $ProjectRoot
+        $shortcut.Description = "Analizador de metricas NVIDIA FrameView"
+        $shortcut.Save()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+Clear-Host
+Write-Host "`n  FrameView Analyzer - Instalacion remota`n" -ForegroundColor Green
+
+Write-Step "1/4  Verificando Python..."
+$pythonCmd = Get-PythonCmd
+if (-not $pythonCmd) {
+    Write-Host "  Se requiere Python 3.10 o superior." -ForegroundColor Red
+    Write-Host "  Descarga: https://www.python.org/downloads/" -ForegroundColor Yellow
     exit 1
 }
-Write-Ok "Python: $(& $python --version 2>&1)"
+Write-Ok "$(& $pythonCmd --version 2>&1)"
 
-Write-Step "Descargando proyecto en $InstallDir"
-Update-FromZip $InstallDir
-Write-Ok "Archivos instalados"
+Write-Step "2/4  Actualizando aplicacion en $InstallDir"
+$updatedWithGit = $false
+if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $InstallDir ".git"))) {
+    try {
+        Update-FromGit $InstallDir
+        $updatedWithGit = $true
+        Write-Ok "Codigo actualizado con git pull"
+    } catch {
+        Write-Host "  git pull fallo, usando descarga ZIP..." -ForegroundColor Yellow
+    }
+}
+if (-not $updatedWithGit) {
+    Update-FromZip $InstallDir
+    Write-Ok "Codigo actualizado desde GitHub"
+}
 
-Write-Step "Instalando dependencias"
-& $python -m pip install --upgrade pip | Out-Null
-& $python -m pip install -r (Join-Path $InstallDir $RequirementsFile)
-Write-Ok "Dependencias listas"
+Write-Step "3/4  Preparando entorno..."
+$venvPath = Join-Path $InstallDir "venv"
+if (-not (Test-Path (Join-Path $venvPath "Scripts\python.exe"))) {
+    & $pythonCmd -m venv $venvPath
+}
+$venvPython = Join-Path $venvPath "Scripts\python.exe"
+& $venvPython -m pip install --upgrade pip -q
+& $venvPython -m pip install -r (Join-Path $InstallDir $RequirementsFile) -q
+Write-Ok "Dependencias instaladas en venv"
 
-Write-Step "Iniciando FrameView Analyzer"
+if (New-DesktopShortcut $InstallDir) {
+    Write-Ok "Acceso directo: $ShortcutName"
+}
+
+Write-Step "4/4  Abriendo FrameView Analyzer..."
+Write-Host "`n  Listo. Se abrira la aplicacion.`n" -ForegroundColor Green
 Set-Location $InstallDir
-& $python (Join-Path $InstallDir $EntryPoint)
+& $venvPython (Join-Path $InstallDir $EntryPoint)
