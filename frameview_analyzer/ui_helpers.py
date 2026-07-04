@@ -56,6 +56,14 @@ def build_page_header(
     return header
 
 
+def section_header(parent: ctk.CTkBaseClass, title: str) -> ctk.CTkFrame:
+    row = ctk.CTkFrame(parent, fg_color="transparent")
+    row.pack(fill="x", padx=12, pady=(10, 4))
+    ctk.CTkLabel(row, text=title, font=ctk.CTkFont(size=11, weight="bold"), text_color="gray85").pack(side="left")
+    ctk.CTkFrame(row, fg_color="#333333", height=1).pack(side="left", fill="x", expand=True, padx=(8, 0), pady=6)
+    return row
+
+
 def build_card(parent: ctk.CTkBaseClass, title: str | None = None) -> ctk.CTkFrame:
     card = ctk.CTkFrame(
         parent,

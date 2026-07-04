@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import tkinter as tk
-from collections import defaultdict
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
@@ -16,9 +14,10 @@ from frameview_analyzer.analytics import (
     get_trimmed_series,
 )
 from frameview_analyzer.chart_panel import ChartPanel, ChartSeries, StatsPanel
-from frameview_analyzer.csv_loader import LoadedCsv, load_csv
-from frameview_analyzer.metrics import MetricDef
-from frameview_analyzer.ui_helpers import APP_COLORS, build_card, build_page_header
+from frameview_analyzer.csv_loader import load_csv
+from frameview_analyzer.metric_picker import MetricPicker
+from frameview_analyzer.metrics import CORE_METRICS, MetricDef
+from frameview_analyzer.ui_helpers import APP_COLORS, build_card, build_page_header, section_header
 
 METRIC_HELP = {
     "fps": "FPS calculado por segundo en el tramo activo de la prueba.",
@@ -36,171 +35,217 @@ class FrameViewAnalyzerApp(ctk.CTk):
         super().__init__()
         self.app_dir = app_dir
         self.title("FrameView Analyzer")
-        self.geometry("1280x860")
-        self.minsize(1080, 720)
+        self.geometry("1320x880")
+        self.minsize(1100, 740)
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
+        self.configure(fg_color="#161616")
 
         self._session_a: SessionAnalysis | None = None
         self._session_b: SessionAnalysis | None = None
-        self._metric_map: dict[str, MetricDef] = {}
         self._selected_metric_id = "fps"
 
         self._build_ui()
+        self._metric_picker.set_metrics(CORE_METRICS, selected_id="fps")
         self._refresh_dashboard()
 
     def _build_ui(self) -> None:
         build_page_header(
             self,
             "FrameView Analyzer",
-            "Analiza logs CSV de NVIDIA FrameView: FPS, latencia, GPU, CPU y todas las métricas exportadas.",
+            "Gráficos temporales y comparación de sesiones NVIDIA FrameView.",
             badge="NVIDIA FrameView",
         )
 
-        toolbar = ctk.CTkFrame(self, fg_color="transparent")
-        toolbar.pack(fill="x", padx=20, pady=(0, 8))
+        toolbar = ctk.CTkFrame(self, fg_color=APP_COLORS["card"], corner_radius=10, border_color=APP_COLORS["card_border"], border_width=1)
+        toolbar.pack(fill="x", padx=20, pady=(0, 10))
+
+        btn_row = ctk.CTkFrame(toolbar, fg_color="transparent")
+        btn_row.pack(fill="x", padx=12, pady=10)
 
         self._btn_load_a = ctk.CTkButton(
-            toolbar,
-            text="Cargar sesión base",
+            btn_row,
+            text="Sesión base",
+            width=120,
+            height=32,
             fg_color=APP_COLORS["accent"],
             hover_color=APP_COLORS["accent_hover"],
             command=lambda: self._load_session(slot="a"),
         )
-        self._btn_load_a.pack(side="left", padx=(0, 8))
+        self._btn_load_a.pack(side="left", padx=(0, 6))
 
         self._btn_load_b = ctk.CTkButton(
-            toolbar,
-            text="Cargar comparativa",
+            btn_row,
+            text="Comparativa",
+            width=120,
+            height=32,
             fg_color="#2a2a2a",
             hover_color="#3a3a3a",
             border_color=APP_COLORS["series_b"],
             border_width=1,
             command=lambda: self._load_session(slot="b"),
         )
-        self._btn_load_b.pack(side="left", padx=(0, 8))
+        self._btn_load_b.pack(side="left", padx=(0, 6))
 
         self._btn_export = ctk.CTkButton(
-            toolbar,
-            text="Exportar gráfico PNG",
+            btn_row,
+            text="Exportar PNG",
+            width=110,
+            height=32,
             fg_color="#2a2a2a",
             hover_color="#3a3a3a",
             command=self._export_chart,
         )
         self._btn_export.pack(side="left")
 
-        self._file_a_label = ctk.CTkLabel(toolbar, text="Base: sin archivo", text_color=APP_COLORS["muted"])
-        self._file_a_label.pack(side="right", padx=(8, 0))
-        self._file_b_label = ctk.CTkLabel(toolbar, text="Comparativa: --", text_color=APP_COLORS["muted"])
-        self._file_b_label.pack(side="right", padx=(8, 0))
+        files_row = ctk.CTkFrame(toolbar, fg_color="transparent")
+        files_row.pack(fill="x", padx=12, pady=(0, 10))
+        self._file_a_label = ctk.CTkLabel(
+            files_row,
+            text="Base: sin archivo",
+            text_color=APP_COLORS["muted"],
+            font=ctk.CTkFont(size=10),
+            anchor="w",
+        )
+        self._file_a_label.pack(fill="x")
+        self._file_b_label = ctk.CTkLabel(
+            files_row,
+            text="Comparativa: —",
+            text_color=APP_COLORS["muted"],
+            font=ctk.CTkFont(size=10),
+            anchor="w",
+        )
+        self._file_b_label.pack(fill="x", pady=(2, 0))
 
         body = ctk.CTkFrame(self, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=20, pady=(0, 16))
         body.grid_columnconfigure(1, weight=1)
         body.grid_rowconfigure(0, weight=1)
 
-        sidebar = ctk.CTkScrollableFrame(body, width=300, fg_color=APP_COLORS["card"], corner_radius=12)
+        sidebar = ctk.CTkFrame(body, width=268, fg_color=APP_COLORS["card"], corner_radius=12, border_color=APP_COLORS["card_border"], border_width=1)
         sidebar.grid(row=0, column=0, sticky="nsw", padx=(0, 12))
+        sidebar.grid_propagate(False)
 
-        ctk.CTkLabel(sidebar, text="Métrica", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=12, pady=(12, 4))
-        self._metric_var = tk.StringVar(value="fps")
-        self._metric_menu = ctk.CTkOptionMenu(
-            sidebar,
-            variable=self._metric_var,
-            values=["fps"],
-            command=self._on_metric_changed,
-            width=260,
-        )
-        self._metric_menu.pack(padx=12, pady=(0, 8))
+        sidebar_inner = ctk.CTkScrollableFrame(sidebar, fg_color="transparent", scrollbar_button_color="#333333")
+        sidebar_inner.pack(fill="both", expand=True, padx=4, pady=4)
+
+        section_header(sidebar_inner, "Métrica")
+        self._metric_picker = MetricPicker(sidebar_inner, on_select=self._on_metric_selected, list_height=128)
+        self._metric_picker.pack(fill="x", padx=8, pady=(0, 4))
 
         self._metric_help = ctk.CTkLabel(
-            sidebar,
+            sidebar_inner,
             text=METRIC_HELP["fps"],
             text_color=APP_COLORS["muted"],
-            wraplength=250,
+            wraplength=220,
             justify="left",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=10),
         )
-        self._metric_help.pack(anchor="w", padx=12, pady=(0, 12))
+        self._metric_help.pack(anchor="w", padx=12, pady=(0, 6))
 
-        ctk.CTkLabel(sidebar, text="Filtro de tramo activo", font=ctk.CTkFont(size=13, weight="bold")).pack(
-            anchor="w", padx=12, pady=(4, 4)
-        )
+        section_header(sidebar_inner, "Tramo activo")
 
-        self._auto_gpu_var = tk.BooleanVar(value=True)
+        self._auto_gpu_var = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(
-            sidebar,
+            sidebar_inner,
             text="Umbral GPU automático",
             variable=self._auto_gpu_var,
+            font=ctk.CTkFont(size=11),
             command=self._refresh_dashboard,
-        ).pack(anchor="w", padx=12, pady=(0, 6))
+        ).pack(anchor="w", padx=12, pady=(0, 4))
 
-        gpu_row = ctk.CTkFrame(sidebar, fg_color="transparent")
-        gpu_row.pack(fill="x", padx=12, pady=(0, 6))
-        ctk.CTkLabel(gpu_row, text="Umbral GPU %").pack(side="left")
-        self._gpu_threshold = ctk.CTkSlider(gpu_row, from_=0, to=80, number_of_steps=80, command=self._on_slider)
+        gpu_row = ctk.CTkFrame(sidebar_inner, fg_color="transparent")
+        gpu_row.pack(fill="x", padx=12, pady=(0, 4))
+        ctk.CTkLabel(gpu_row, text="GPU %", font=ctk.CTkFont(size=10), width=36).pack(side="left")
+        self._gpu_threshold = ctk.CTkSlider(
+            gpu_row,
+            from_=0,
+            to=80,
+            number_of_steps=80,
+            height=14,
+            progress_color=APP_COLORS["accent"],
+            command=self._on_slider,
+        )
         self._gpu_threshold.set(10)
-        self._gpu_threshold.pack(side="left", fill="x", expand=True, padx=(8, 0))
-        self._gpu_value_label = ctk.CTkLabel(gpu_row, text="10", width=28)
+        self._gpu_threshold.pack(side="left", fill="x", expand=True, padx=(4, 4))
+        self._gpu_value_label = ctk.CTkLabel(gpu_row, text="10", width=24, font=ctk.CTkFont(size=10))
         self._gpu_value_label.pack(side="left")
 
-        trim_row = ctk.CTkFrame(sidebar, fg_color="transparent")
-        trim_row.pack(fill="x", padx=12, pady=(0, 12))
-        ctk.CTkLabel(trim_row, text="Recorte bordes s").pack(side="left")
-        self._trim_buffer = ctk.CTkSlider(trim_row, from_=0, to=10, number_of_steps=10, command=self._on_slider)
+        trim_row = ctk.CTkFrame(sidebar_inner, fg_color="transparent")
+        trim_row.pack(fill="x", padx=12, pady=(0, 8))
+        ctk.CTkLabel(trim_row, text="Recorte", font=ctk.CTkFont(size=10), width=36).pack(side="left")
+        self._trim_buffer = ctk.CTkSlider(
+            trim_row,
+            from_=0,
+            to=10,
+            number_of_steps=10,
+            height=14,
+            progress_color=APP_COLORS["accent"],
+            command=self._on_slider,
+        )
         self._trim_buffer.set(1)
-        self._trim_buffer.pack(side="left", fill="x", expand=True, padx=(8, 0))
-        self._trim_value_label = ctk.CTkLabel(trim_row, text="1", width=28)
+        self._trim_buffer.pack(side="left", fill="x", expand=True, padx=(4, 4))
+        self._trim_value_label = ctk.CTkLabel(trim_row, text="1s", width=24, font=ctk.CTkFont(size=10))
         self._trim_value_label.pack(side="left")
 
-        self._metadata_card = build_card(sidebar, "Sesión base")
-        self._metadata_card.pack(fill="x", padx=8, pady=(0, 8))
-        self._meta_a_text = ctk.CTkLabel(
-            self._metadata_card,
-            text="Sin datos",
-            justify="left",
-            anchor="w",
-            text_color="gray85",
-            font=ctk.CTkFont(size=11),
-        )
-        self._meta_a_text.pack(fill="x", padx=12, pady=(0, 12))
+        section_header(sidebar_inner, "Sesiones")
 
-        self._metadata_b_card = build_card(sidebar, "Comparativa")
-        self._metadata_b_card.pack(fill="x", padx=8, pady=(0, 12))
-        self._meta_b_text = ctk.CTkLabel(
-            self._metadata_b_card,
+        meta_a_card = ctk.CTkFrame(sidebar_inner, fg_color="#252525", corner_radius=8, border_color="#333333", border_width=1)
+        meta_a_card.pack(fill="x", padx=8, pady=(0, 6))
+        ctk.CTkLabel(meta_a_card, text="Base", text_color=APP_COLORS["series_a"], font=ctk.CTkFont(size=10, weight="bold")).pack(
+            anchor="w", padx=10, pady=(8, 2)
+        )
+        self._meta_a_text = ctk.CTkLabel(
+            meta_a_card,
             text="Sin datos",
             justify="left",
             anchor="w",
             text_color="gray85",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=10),
         )
-        self._meta_b_text.pack(fill="x", padx=12, pady=(0, 12))
+        self._meta_a_text.pack(fill="x", padx=10, pady=(0, 8))
+
+        meta_b_card = ctk.CTkFrame(sidebar_inner, fg_color="#252525", corner_radius=8, border_color="#333333", border_width=1)
+        meta_b_card.pack(fill="x", padx=8, pady=(0, 10))
+        ctk.CTkLabel(meta_b_card, text="Comparativa", text_color=APP_COLORS["series_b"], font=ctk.CTkFont(size=10, weight="bold")).pack(
+            anchor="w", padx=10, pady=(8, 2)
+        )
+        self._meta_b_text = ctk.CTkLabel(
+            meta_b_card,
+            text="Sin datos",
+            justify="left",
+            anchor="w",
+            text_color="gray85",
+            font=ctk.CTkFont(size=10),
+        )
+        self._meta_b_text.pack(fill="x", padx=10, pady=(0, 8))
 
         main = ctk.CTkFrame(body, fg_color="transparent")
         main.grid(row=0, column=1, sticky="nsew")
-        main.grid_rowconfigure(0, weight=3)
-        main.grid_rowconfigure(1, weight=1)
+        main.grid_rowconfigure(0, weight=4)
+        main.grid_rowconfigure(1, weight=2)
         main.grid_columnconfigure(0, weight=1)
 
         chart_card = build_card(main, "Gráfico temporal")
-        chart_card.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
+        chart_card.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
         self._chart = ChartPanel(chart_card)
-        self._chart.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self._chart.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
         stats_card = build_card(main, "Estadísticas del tramo activo")
         stats_card.grid(row=1, column=0, sticky="nsew")
         self._stats = StatsPanel(stats_card)
-        self._stats.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self._stats.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     def _on_slider(self, _value: float) -> None:
         self._gpu_value_label.configure(text=str(int(round(self._gpu_threshold.get()))))
-        self._trim_value_label.configure(text=str(int(round(self._trim_buffer.get()))))
+        self._trim_value_label.configure(text=f"{int(round(self._trim_buffer.get()))}s")
         self._refresh_dashboard()
 
-    def _on_metric_changed(self, metric_id: str) -> None:
-        self._selected_metric_id = metric_id
-        self._metric_help.configure(text=METRIC_HELP.get(metric_id, "Métrica numérica exportada por FrameView."))
+    def _on_metric_selected(self, metric: MetricDef) -> None:
+        self._selected_metric_id = metric.metric_id
+        self._metric_help.configure(
+            text=METRIC_HELP.get(metric.metric_id, f"{metric.label} — métrica exportada por FrameView.")
+        )
         self._refresh_dashboard()
 
     def _analysis_options(self) -> AnalysisOptions:
@@ -239,40 +284,14 @@ class FrameViewAnalyzerApp(ctk.CTk):
             self._session_b = session
             self._file_b_label.configure(text=f"Comparativa: {loaded.display_name}")
 
-        self._rebuild_metric_menu()
+        self._rebuild_metric_picker()
         self._refresh_dashboard()
 
-    def _rebuild_metric_menu(self) -> None:
+    def _rebuild_metric_picker(self) -> None:
         catalog = self._session_a.catalog if self._session_a else []
-        grouped: dict[str, list[MetricDef]] = defaultdict(list)
-        for metric in catalog:
-            grouped[metric.category].append(metric)
-
-        labels: list[str] = []
-        self._metric_map = {}
-        for category in sorted(grouped):
-            for metric in grouped[category]:
-                label = f"[{category}] {metric.label}"
-                labels.append(label)
-                self._metric_map[label] = metric
-
-        if not labels:
-            labels = ["fps"]
-            self._metric_map = {}
-            self._selected_metric_id = "fps"
-            self._metric_var.set("fps")
-            self._metric_menu.configure(values=["fps"])
-            return
-
-        self._metric_menu.configure(values=labels)
-        current = next((lbl for lbl, m in self._metric_map.items() if m.metric_id == self._selected_metric_id), labels[0])
-        self._metric_var.set(current)
-        self._selected_metric_id = self._metric_map[current].metric_id
+        self._metric_picker.set_metrics(catalog, selected_id=self._selected_metric_id)
 
     def _current_metric(self) -> MetricDef | None:
-        label = self._metric_var.get()
-        if label in self._metric_map:
-            return self._metric_map[label]
         if self._session_a:
             for metric in self._session_a.catalog:
                 if metric.metric_id == self._selected_metric_id:
@@ -284,12 +303,9 @@ class FrameViewAnalyzerApp(ctk.CTk):
             return "Sin datos"
         meta = session.metadata
         return (
-            f"App: {meta.application}\n"
-            f"Resolución: {meta.resolution}\n"
-            f"GPU: {meta.gpu}\n"
-            f"CPU: {meta.cpu}\n"
-            f"Duración activa: {meta.duration}\n"
-            f"Frames: {meta.frame_count:,}"
+            f"{meta.application}\n"
+            f"{meta.resolution} · {meta.duration}\n"
+            f"{meta.frame_count:,} frames"
         )
 
     def _refresh_dashboard(self) -> None:

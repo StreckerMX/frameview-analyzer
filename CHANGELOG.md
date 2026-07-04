@@ -4,6 +4,18 @@ Todos los cambios notables de este proyecto se documentan aquí.
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.1.0] - 2026-07-04
+
+### Añadido
+
+- Selector de métricas compacto, desplazable y con búsqueda (reemplaza el menú desplegable)
+- Chips de estadísticas y secciones con separadores en la barra lateral
+
+### Mejorado
+
+- Gráficos con área sombreada, línea de promedio, ejes más limpios y formato numérico adaptativo
+- Toolbar, tarjetas de sesión y layout general más compacto
+
 ## [1.0.1] - 2026-07-04
 
 ### Corregido
